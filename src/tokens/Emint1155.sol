@@ -1,19 +1,23 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import {ERC1155Upgradeable} from "openzeppelin-contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import {IERC1155Upgradeable} from "openzeppelin-contracts-upgradeable/token/ERC1155/IERC1155Upgradeable.sol";
 import {ERC1155BurnableUpgradeable} from
     "openzeppelin-contracts-upgradeable/token/ERC1155/extensions/ERC1155BurnableUpgradeable.sol";
 import {IERC1155MetadataURIUpgradeable} from
     "openzeppelin-contracts-upgradeable/token/ERC1155/extensions/IERC1155MetadataURIUpgradeable.sol";
 import {IERC2981Upgradeable} from "openzeppelin-contracts-upgradeable/interfaces/IERC2981Upgradeable.sol";
+import {IERC165Upgradeable} from "openzeppelin-contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
+import {DefaultOperatorFiltererUpgradeable} from
+    "operator-filter-registry/upgradeable/DefaultOperatorFiltererUpgradeable.sol";
 
 import {IEmint1155} from "../interfaces/IEmint1155.sol";
 import {ITokens} from "../interfaces/ITokens.sol";
 import {IMetadata} from "../interfaces/IMetadata.sol";
 import {IRoyalties} from "../interfaces/IRoyalties.sol";
 
-contract Emint1155 is IEmint1155, ERC1155BurnableUpgradeable {
+contract Emint1155 is IEmint1155, ERC1155BurnableUpgradeable, DefaultOperatorFiltererUpgradeable {
     string public constant NAME = "Emint1155";
     string public constant VERSION = "0.0.1";
 
@@ -26,8 +30,15 @@ contract Emint1155 is IEmint1155, ERC1155BurnableUpgradeable {
         _;
     }
 
+    constructor() {
+        // Prevent initialization of the implementation contract.
+        _disableInitializers();
+    }
+
     /// @inheritdoc IEmint1155
     function initialize(address _tokens) external override initializer {
+        __ERC1155_init("");
+        __DefaultOperatorFilterer_init();
         tokens = _tokens;
     }
 
@@ -92,5 +103,40 @@ contract Emint1155 is IEmint1155, ERC1155BurnableUpgradeable {
         override (ERC1155BurnableUpgradeable, IEmint1155)
     {
         super.burnBatch(account, ids, values);
+    }
+
+    function setApprovalForAll(address operator, bool approved)
+        public
+        override (ERC1155Upgradeable, IERC1155Upgradeable)
+        onlyAllowedOperatorApproval(operator)
+    {
+        super.setApprovalForAll(operator, approved);
+    }
+
+    function safeTransferFrom(address from, address to, uint256 tokenId, uint256 amount, bytes memory data)
+        public
+        override (ERC1155Upgradeable, IERC1155Upgradeable)
+        onlyAllowedOperator(from)
+    {
+        super.safeTransferFrom(from, to, tokenId, amount, data);
+    }
+
+    function safeBatchTransferFrom(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) public virtual override (ERC1155Upgradeable, IERC1155Upgradeable) onlyAllowedOperator(from) {
+        super.safeBatchTransferFrom(from, to, ids, amounts, data);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override (ERC1155Upgradeable, IERC165Upgradeable)
+        returns (bool)
+    {
+        return interfaceId == type(IERC2981Upgradeable).interfaceId || super.supportsInterface(interfaceId);
     }
 }

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
@@ -13,19 +13,19 @@ contract DeployEmintV1 is Script {
     address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
 
     function run() public {
-        string memory tokenURI = "https://www.staging-entertainmint.com/api/metadata/tokens/";
-        string memory contractURI = "https://www.staging-entertainmint.com/api/metadata/contracts/";
-        address royaltyReceiver = msg.sender;
-        address owner = msg.sender;
-        address collectionOwner = msg.sender;
+        string memory tokenURI = "https://www.entertainmint.com/api/metadata/tokens/";
+        string memory contractURI = "https://www.entertainmint.com/api/metadata/contracts/";
+
+        address royaltyReceiver = vm.envAddress("EMINT_ADMIN_MULTISIG");
+        address owner = vm.envAddress("EMINT_ADMIN_MULTISIG");
+        address collectionOwner = vm.envAddress("EMINT_COLLECTION_ADMIN");
 
         vm.startBroadcast();
         new EmintV1Fab{ salt: "emint-v1-fab" }(tokenURI, contractURI, royaltyReceiver, owner, collectionOwner);
-        Contracts memory contracts =
-            Create2.contracts(CREATE2_DEPLOYER, tokenURI, contractURI, royaltyReceiver, owner, collectionOwner);
-        IOwnable2Step(contracts.controller).acceptOwnership();
         vm.stopBroadcast();
 
+        Contracts memory contracts =
+            Create2.contracts(CREATE2_DEPLOYER, tokenURI, contractURI, royaltyReceiver, owner, collectionOwner);
         emit Deployment(contracts);
     }
 }

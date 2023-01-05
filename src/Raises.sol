@@ -1,13 +1,14 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import {ReentrancyGuard} from "openzeppelin-contracts/security/ReentrancyGuard.sol";
 import {Address} from "openzeppelin-contracts/utils/Address.sol";
 import {MerkleProof} from "openzeppelin-contracts/utils/cryptography/MerkleProof.sol";
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "openzeppelin-contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "openzeppelin-contracts/utils/math/Math.sol";
 
-import {RaiseParams, Raise, RaiseState, RaiseTokens, Phase} from "./structs/Raise.sol";
+import {RaiseParams, Raise, RaiseState, RaiseTokens, RaiseTimestamps, Phase, FeeSchedule} from "./structs/Raise.sol";
 import {TierParams, TierType, Tier} from "./structs/Tier.sol";
 import {RaiseValidator} from "./libraries/validators/RaiseValidator.sol";
 import {TierValidator} from "./libraries/validators/TierValidator.sol";
@@ -33,6 +34,7 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
     using RaiseValidator for RaiseParams;
     using TierValidator for TierParams;
     using Phases for Raise;
+    using Fees for FeeSchedule;
     using SafeERC20 for IERC20;
     using Address for address payable;
 
@@ -45,6 +47,8 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
     address public deployer;
     address public tokens;
     address public tokenAuth;
+
+    FeeSchedule public feeSchedule = FeeSchedule({fanFee: 500, brandFee: 2500});
 
     // projectId => totalRaises
     mapping(uint32 => uint32) public totalRaises;
@@ -87,10 +91,10 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         address fanToken = ITokenDeployer(deployer).deploy();
         address brandToken = ITokenDeployer(deployer).deploy();
 
-        _saveRaise(projectId, raiseId, fanToken, brandToken, params);
+        _saveRaise(projectId, raiseId, fanToken, brandToken, feeSchedule, params);
         _saveTiers(projectId, raiseId, fanToken, brandToken, _tiers);
 
-        emit CreateRaise(projectId, raiseId, params, _tiers);
+        emit CreateRaise(projectId, raiseId, params, _tiers, fanToken, brandToken);
     }
 
     /// @inheritdoc IRaises
@@ -106,17 +110,15 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         // Check that raise status is active
         if (raise.state != RaiseState.Active) revert RaiseInactive();
 
-        Phase phase = raise.phase();
-
         // Check that raise has not started
-        if (phase != Phase.Scheduled) revert RaiseNotScheduled();
+        if (block.timestamp >= raise.timestamps.presaleStart) revert RaiseHasStarted();
 
         params.validate(tokenAuth);
 
         address fanToken = raise.tokens.fanToken;
         address brandToken = raise.tokens.brandToken;
 
-        _saveRaise(projectId, raiseId, fanToken, brandToken, params);
+        _saveRaise(projectId, raiseId, fanToken, brandToken, raise.feeSchedule, params);
         _saveTiers(projectId, raiseId, fanToken, brandToken, _tiers);
 
         emit UpdateRaise(projectId, raiseId, params, _tiers);
@@ -188,7 +190,11 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         if (raise.raised < raise.goal) revert RaiseGoalNotMet();
 
         // Effects
+        // Transition to Funded
         emit CloseRaise(projectId, raiseId, raise.state = RaiseState.Funded);
+
+        // Add this raise's fees to global fee balance
+        fees[raise.currency] += raise.fees;
     }
 
     /// @inheritdoc IRaises
@@ -240,7 +246,7 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         if (raise.state != RaiseState.Cancelled) revert RaiseNotCancelled();
 
         // Get the tier if it exists
-        if (tierId > tiers[projectId][raiseId].length - 1) revert NotFound();
+        if (tierId >= tiers[projectId][raiseId].length) revert NotFound();
         Tier storage tier = tiers[projectId][raiseId][tierId];
 
         // Effects
@@ -248,10 +254,10 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         uint256 refund = amount * tier.price;
 
         // Calculate protocol fee and creator take
-        (uint256 protocolFee, uint256 creatorTake) = Fees.calculate(tier.tierType, refund);
+        (uint256 protocolFee, uint256 creatorTake) = raise.feeSchedule.calculate(tier.tierType, refund);
 
         // Deduct refund from balance and fees
-        raise.balance -= creatorTake;
+        raise.balance -= Math.min(raise.balance, creatorTake);
         raise.fees -= protocolFee;
 
         // Interactions
@@ -295,6 +301,12 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         emit WithdrawFees(receiver, currency, balance);
     }
 
+    function setFeeSchedule(FeeSchedule calldata newFeeSchedule) external override onlyController {
+        newFeeSchedule.validate();
+        emit SetFeeSchedule(feeSchedule, newFeeSchedule);
+        feeSchedule = newFeeSchedule;
+    }
+
     /// @inheritdoc IPausable
     function pause() external override onlyController {
         _pause();
@@ -327,7 +339,14 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
     }
 
     /// @inheritdoc IRaises
+    function getPhase(uint32 projectId, uint32 raiseId) external view override returns (Phase) {
+        return _getRaise(projectId, raiseId).phase();
+    }
+
+    /// @inheritdoc IRaises
     function getTiers(uint32 projectId, uint32 raiseId) external view override returns (Tier[] memory) {
+        // Check that project and raise exist
+        _getRaise(projectId, raiseId);
         return tiers[projectId][raiseId];
     }
 
@@ -388,7 +407,7 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         if (phase == Phase.Ended) revert RaiseEnded();
 
         // Get the tier if it exists
-        if (tierId > tiers[projectId][raiseId].length - 1) revert NotFound();
+        if (tierId >= tiers[projectId][raiseId].length) revert NotFound();
         Tier storage tier = tiers[projectId][raiseId][tierId];
 
         // In presale phase, user must provide a valid proof
@@ -440,7 +459,7 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         raise.raised = totalRaised;
 
         // Calculate protocol fee and creator take
-        (uint256 protocolFee, uint256 creatorTake) = Fees.calculate(tier.tierType, mintPrice);
+        (uint256 protocolFee, uint256 creatorTake) = raise.feeSchedule.calculate(tier.tierType, mintPrice);
 
         // Increase balances
         raise.balance += creatorTake;
@@ -467,20 +486,24 @@ contract Raises is IRaises, Controllable, Pausable, ReentrancyGuard {
         uint32 raiseId,
         address fanToken,
         address brandToken,
+        FeeSchedule memory _feeSchedule,
         RaiseParams memory params
     ) internal {
         raises[projectId][raiseId] = Raise({
             currency: params.currency,
             goal: params.goal,
             max: params.max,
-            presaleStart: params.presaleStart,
-            presaleEnd: params.presaleEnd,
-            publicSaleStart: params.publicSaleStart,
-            publicSaleEnd: params.publicSaleEnd,
+            timestamps: RaiseTimestamps({
+                presaleStart: params.presaleStart,
+                presaleEnd: params.presaleEnd,
+                publicSaleStart: params.publicSaleStart,
+                publicSaleEnd: params.publicSaleEnd
+            }),
             state: RaiseState.Active,
             projectId: projectId,
             raiseId: raiseId,
             tokens: RaiseTokens({fanToken: fanToken, brandToken: brandToken}),
+            feeSchedule: _feeSchedule,
             raised: 0,
             balance: 0,
             fees: 0

@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 /// @notice Enum representing token types. The V1 protocol supports only one
 /// token type, "Raise," which represents a crowdfund contribution. However,

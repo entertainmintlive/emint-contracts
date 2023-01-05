@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "openzeppelin-contracts/token/ERC1155/utils/ERC1155Holder.sol";
 
@@ -130,6 +130,37 @@ contract TestController is MinterTest {
         assertEq(minter.allowed(bob), true);
         assertEq(minter.allowed(carol), true);
         assertEq(minter.allowed(eve), false);
+    }
+
+    function test_controller_can_set_tokens() public {
+        address newTokens = mkaddr("new tokens");
+
+        vm.prank(controller);
+        minter.setDependency("tokens", newTokens);
+
+        assertEq(minter.tokens(), newTokens);
+    }
+
+    function test_non_controller_cannot_set_tokens() public {
+        address newTokens = mkaddr("new tokens");
+
+        vm.expectRevert(ICommonErrors.Forbidden.selector);
+        vm.prank(eve);
+        minter.setDependency("tokens", newTokens);
+    }
+
+    function test_controller_cannot_set_invalid_dependency() public {
+        address invalid = mkaddr("invalid");
+
+        vm.expectRevert(abi.encodeWithSelector(IControllable.InvalidDependency.selector, bytes32("invalid")));
+        vm.prank(controller);
+        minter.setDependency("invalid", invalid);
+    }
+
+    function test_controller_cannot_set_zero_address() public {
+        vm.expectRevert(ICommonErrors.ZeroAddress.selector);
+        vm.prank(controller);
+        minter.setDependency("tokens", address(0));
     }
 }
 

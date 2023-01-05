@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "../EmintTest.t.sol";
-import {Raise, RaiseState, RaiseTokens} from "../../src/structs/Raise.sol";
+import {Raise, RaiseState, RaiseTokens, RaiseTimestamps, FeeSchedule} from "../../src/structs/Raise.sol";
 import {ETH} from "../../src/constants/Constants.sol";
 import "../../src/libraries/Phases.sol";
 
@@ -15,13 +15,16 @@ contract TestPhases is EmintTest {
             projectId: 1,
             raiseId: 1,
             tokens: RaiseTokens(address(0), address(0)),
+            feeSchedule: FeeSchedule({fanFee: 500, brandFee: 2500}),
             currency: ETH,
             goal: 10 ether,
             max: 1 ether,
-            presaleStart: uint64(block.timestamp) + 1 days,
-            presaleEnd: uint64(block.timestamp) + 10 days,
-            publicSaleStart: uint64(block.timestamp) + 10 days,
-            publicSaleEnd: uint64(block.timestamp) + 20 days,
+            timestamps: RaiseTimestamps({
+                presaleStart: uint64(block.timestamp) + 1 days,
+                presaleEnd: uint64(block.timestamp) + 10 days,
+                publicSaleStart: uint64(block.timestamp) + 10 days,
+                publicSaleEnd: uint64(block.timestamp) + 20 days
+            }),
             raised: 0,
             balance: 0,
             fees: 0
@@ -36,19 +39,22 @@ contract TestPhases is EmintTest {
             projectId: 1,
             raiseId: 1,
             tokens: RaiseTokens(address(0), address(0)),
+            feeSchedule: FeeSchedule({fanFee: 500, brandFee: 2500}),
             currency: ETH,
             goal: 10 ether,
             max: 1 ether,
-            presaleStart: uint64(block.timestamp) + 1 days,
-            presaleEnd: uint64(block.timestamp) + 10 days,
-            publicSaleStart: uint64(block.timestamp) + 10 days,
-            publicSaleEnd: uint64(block.timestamp) + 20 days,
+            timestamps: RaiseTimestamps({
+                presaleStart: uint64(block.timestamp) + 1 days,
+                presaleEnd: uint64(block.timestamp) + 10 days,
+                publicSaleStart: uint64(block.timestamp) + 10 days,
+                publicSaleEnd: uint64(block.timestamp) + 20 days
+            }),
             raised: 0,
             balance: 0,
             fees: 0
         });
 
-        vm.warp(raise.publicSaleEnd + 1);
+        vm.warp(raise.timestamps.publicSaleEnd + 1);
         assertEq(uint8(raise.phase()), uint8(Phase.Ended));
     }
 
@@ -58,19 +64,22 @@ contract TestPhases is EmintTest {
             projectId: 1,
             raiseId: 1,
             tokens: RaiseTokens(address(0), address(0)),
+            feeSchedule: FeeSchedule({fanFee: 500, brandFee: 2500}),
             currency: ETH,
             goal: 10 ether,
             max: 1 ether,
-            presaleStart: uint64(block.timestamp) + 1 days,
-            presaleEnd: uint64(block.timestamp) + 10 days,
-            publicSaleStart: uint64(block.timestamp) + 10 days,
-            publicSaleEnd: uint64(block.timestamp) + 20 days,
+            timestamps: RaiseTimestamps({
+                presaleStart: uint64(block.timestamp) + 1 days,
+                presaleEnd: uint64(block.timestamp) + 10 days,
+                publicSaleStart: uint64(block.timestamp) + 10 days,
+                publicSaleEnd: uint64(block.timestamp) + 20 days
+            }),
             raised: 0,
             balance: 0,
             fees: 0
         });
 
-        vm.warp(raise.presaleStart);
+        vm.warp(raise.timestamps.presaleStart);
         assertEq(uint8(raise.phase()), uint8(Phase.Presale));
     }
 
@@ -80,19 +89,22 @@ contract TestPhases is EmintTest {
             projectId: 1,
             raiseId: 1,
             tokens: RaiseTokens(address(0), address(0)),
+            feeSchedule: FeeSchedule({fanFee: 500, brandFee: 2500}),
             currency: ETH,
             goal: 10 ether,
             max: 1 ether,
-            presaleStart: uint64(block.timestamp) + 1 days,
-            presaleEnd: uint64(block.timestamp) + 10 days,
-            publicSaleStart: uint64(block.timestamp) + 10 days,
-            publicSaleEnd: uint64(block.timestamp) + 20 days,
+            timestamps: RaiseTimestamps({
+                presaleStart: uint64(block.timestamp) + 1 days,
+                presaleEnd: uint64(block.timestamp) + 10 days,
+                publicSaleStart: uint64(block.timestamp) + 10 days,
+                publicSaleEnd: uint64(block.timestamp) + 20 days
+            }),
             raised: 0,
             balance: 0,
             fees: 0
         });
 
-        vm.warp(raise.publicSaleStart);
+        vm.warp(raise.timestamps.publicSaleStart);
         assertEq(uint8(raise.phase()), uint8(Phase.PublicSale));
     }
 
@@ -102,19 +114,22 @@ contract TestPhases is EmintTest {
             projectId: 1,
             raiseId: 1,
             tokens: RaiseTokens(address(0), address(0)),
+            feeSchedule: FeeSchedule({fanFee: 500, brandFee: 2500}),
             currency: ETH,
             goal: 10 ether,
             max: 1 ether,
-            presaleStart: uint64(block.timestamp) + 1 days,
-            presaleEnd: uint64(block.timestamp) + 10 days,
-            publicSaleStart: uint64(block.timestamp) + 20 days,
-            publicSaleEnd: uint64(block.timestamp) + 30 days,
+            timestamps: RaiseTimestamps({
+                presaleStart: uint64(block.timestamp) + 1 days,
+                presaleEnd: uint64(block.timestamp) + 10 days,
+                publicSaleStart: uint64(block.timestamp) + 20 days,
+                publicSaleEnd: uint64(block.timestamp) + 30 days
+            }),
             raised: 0,
             balance: 0,
             fees: 0
         });
 
-        vm.warp(raise.presaleEnd + 1);
+        vm.warp(raise.timestamps.presaleEnd + 1);
         assertEq(uint8(raise.phase()), uint8(Phase.Scheduled));
     }
 
@@ -124,13 +139,16 @@ contract TestPhases is EmintTest {
             projectId: 1,
             raiseId: 1,
             tokens: RaiseTokens(address(0), address(0)),
+            feeSchedule: FeeSchedule({fanFee: 500, brandFee: 2500}),
             currency: ETH,
             goal: 10 ether,
             max: 1 ether,
-            presaleStart: uint64(block.timestamp) + 1 days,
-            presaleEnd: uint64(block.timestamp) + 10 days,
-            publicSaleStart: uint64(block.timestamp) + 20 days,
-            publicSaleEnd: uint64(block.timestamp) + 30 days,
+            timestamps: RaiseTimestamps({
+                presaleStart: uint64(block.timestamp) + 1 days,
+                presaleEnd: uint64(block.timestamp) + 10 days,
+                publicSaleStart: uint64(block.timestamp) + 20 days,
+                publicSaleEnd: uint64(block.timestamp) + 30 days
+            }),
             raised: 0,
             balance: 0,
             fees: 0
@@ -138,16 +156,16 @@ contract TestPhases is EmintTest {
 
         assertEq(uint8(raise.phase()), uint8(Phase.Scheduled));
 
-        vm.warp(raise.presaleStart);
+        vm.warp(raise.timestamps.presaleStart);
         assertEq(uint8(raise.phase()), uint8(Phase.Presale));
 
-        vm.warp(raise.presaleEnd + 1);
+        vm.warp(raise.timestamps.presaleEnd + 1);
         assertEq(uint8(raise.phase()), uint8(Phase.Scheduled));
 
-        vm.warp(raise.publicSaleStart);
+        vm.warp(raise.timestamps.publicSaleStart);
         assertEq(uint8(raise.phase()), uint8(Phase.PublicSale));
 
-        vm.warp(raise.publicSaleEnd + 1);
+        vm.warp(raise.timestamps.publicSaleEnd + 1);
         assertEq(uint8(raise.phase()), uint8(Phase.Ended));
     }
 }

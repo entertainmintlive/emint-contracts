@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "./EmintTest.t.sol";
 import "./fakes/FakeResolver.sol";
@@ -325,7 +325,7 @@ contract TestRaises is CreatorsTest {
         vm.stopPrank();
 
         Raise memory raise = raises.getRaise(projectId, raiseId);
-        vm.warp(raise.publicSaleStart);
+        vm.warp(raise.timestamps.publicSaleStart);
 
         deal(bob, 20 ether);
         vm.prank(bob);
@@ -369,7 +369,7 @@ contract TestRaises is CreatorsTest {
         vm.stopPrank();
 
         Raise memory raise = raises.getRaise(projectId, raiseId);
-        vm.warp(raise.publicSaleStart);
+        vm.warp(raise.timestamps.publicSaleStart);
 
         deal(bob, 20 ether);
         vm.prank(bob);
@@ -400,7 +400,7 @@ contract TestRaises is CreatorsTest {
         vm.stopPrank();
 
         Raise memory raise = raises.getRaise(projectId, raiseId);
-        vm.warp(raise.publicSaleStart);
+        vm.warp(raise.timestamps.publicSaleStart);
 
         deal(bob, 20 ether);
         vm.prank(bob);
@@ -633,6 +633,20 @@ contract TestController is CreatorsTest {
 
         vm.prank(controller);
         creators.setDependency("projects", newProjects);
+    }
+
+    function test_controller_cannot_set_invalid_dependency() public {
+        address invalid = mkaddr("invalid");
+
+        vm.expectRevert(abi.encodeWithSelector(IControllable.InvalidDependency.selector, bytes32("invalid")));
+        vm.prank(controller);
+        creators.setDependency("invalid", invalid);
+    }
+
+    function test_controller_cannot_set_zero_address() public {
+        vm.expectRevert(ICommonErrors.ZeroAddress.selector);
+        vm.prank(controller);
+        creators.setDependency("projects", address(0));
     }
 }
 

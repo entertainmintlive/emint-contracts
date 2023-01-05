@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import {Controller} from "../../src/Controller.sol";
@@ -85,7 +85,7 @@ contract EmintV1Fab {
         emit Deployed("metadata", address(metadata));
         emit Deployed("royalties", address(royalties));
         emit Deployed("minter", address(minter));
-        emit Deployed("dpeloyer", address(deployer));
+        emit Deployed("deployer", address(deployer));
         emit Deployed("tokens", address(tokens));
 
         // Destroy fab contract

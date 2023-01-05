@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "openzeppelin-contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import {Strings} from "openzeppelin-contracts/utils/Strings.sol";
@@ -153,6 +153,10 @@ contract TestController is MetadataTest {
         metadata.setDefaultCollectionOwner(newDefaultCollectionOwner);
     }
 
+    function test_default_collection_owner() public {
+        assertEq(metadata.owner(address(1)), metadata.defaultCollectionOwner());
+    }
+
     function test_controller_can_set_collection_owner() public {
         address newCollectionOwner = mkaddr("new collection owner");
 
@@ -160,6 +164,7 @@ contract TestController is MetadataTest {
         metadata.setCollectionOwner(address(1), newCollectionOwner);
 
         assertEq(metadata.collectionOwners(address(1)), newCollectionOwner);
+        assertEq(metadata.owner(address(1)), newCollectionOwner);
     }
 
     function test_non_controller_cannot_set_collection_owner() public {
@@ -177,6 +182,20 @@ contract TestController is MetadataTest {
 
         vm.prank(controller);
         metadata.setCollectionOwner(address(1), newCollectionOwner);
+    }
+
+    function test_controller_cannot_set_invalid_dependency() public {
+        address invalid = mkaddr("invalid");
+
+        vm.expectRevert(abi.encodeWithSelector(IControllable.InvalidDependency.selector, bytes32("invalid")));
+        vm.prank(controller);
+        metadata.setDependency("invalid", invalid);
+    }
+
+    function test_controller_cannot_set_zero_address() public {
+        vm.expectRevert(ICommonErrors.ZeroAddress.selector);
+        vm.prank(controller);
+        metadata.setDependency("creators", address(0));
     }
 }
 

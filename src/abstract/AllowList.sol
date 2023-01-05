@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import {Controllable} from "./Controllable.sol";
 import {IAllowList} from "../interfaces/IAllowList.sol";

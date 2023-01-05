@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "openzeppelin-contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import {Strings} from "openzeppelin-contracts/utils/Strings.sol";
@@ -31,6 +31,7 @@ contract TokensTest is EmintTest, ERC1155Holder {
     address owner = mkaddr("owner");
 
     event SetMinter(address oldMinter, address newMinter);
+    event SetDeployer(address oldDeployer, address newDeployer);
     event SetMetadata(address oldMetadata, address newMetadata);
     event SetRoyalties(address oldRoyalties, address newRoyalties);
     event UpdateTokenImplementation(address oldImpl, address newImpl);
@@ -212,6 +213,48 @@ contract TestController is TokensTest {
         tokens.setDependency("royalties", newRoyalties);
 
         assertEq(tokens.royalties(), newRoyalties);
+    }
+
+    function test_controller_can_set_deployer() public {
+        address newDeployer = mkaddr("new deployer");
+
+        vm.prank(controller);
+        tokens.setDependency("deployer", newDeployer);
+
+        assertEq(tokens.deployer(), newDeployer);
+    }
+
+    function test_non_controller_cannot_set_deployer() public {
+        address newDeployer = mkaddr("new deployer");
+
+        vm.expectRevert(ICommonErrors.Forbidden.selector);
+        tokens.setDependency("deployer", newDeployer);
+    }
+
+    function test_set_deployer_emits_event() public {
+        address newDeployer = mkaddr("new deployer");
+
+        vm.expectEmit(false, false, false, true);
+        emit SetDeployer(address(deployer), newDeployer);
+
+        vm.prank(controller);
+        tokens.setDependency("deployer", newDeployer);
+
+        assertEq(tokens.deployer(), newDeployer);
+    }
+
+    function test_controller_cannot_set_invalid_dependency() public {
+        address invalid = mkaddr("invalid");
+
+        vm.expectRevert(abi.encodeWithSelector(IControllable.InvalidDependency.selector, bytes32("invalid")));
+        vm.prank(controller);
+        tokens.setDependency("invalid", invalid);
+    }
+
+    function test_controller_cannot_set_zero_address() public {
+        vm.expectRevert(ICommonErrors.ZeroAddress.selector);
+        vm.prank(controller);
+        tokens.setDependency("royalties", address(0));
     }
 
     function test_controller_can_update_token_implementation() public {

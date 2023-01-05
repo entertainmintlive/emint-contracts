@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import {TokenCodec} from "./codecs/TokenCodec.sol";
 import {RaiseCodec} from "./codecs/RaiseCodec.sol";
 import {TokenData, TokenType} from "../structs/TokenData.sol";
 import {RaiseData, TierType} from "../structs/RaiseData.sol";
+import {TWO_BYTES} from "../constants/Codecs.sol";
 
 //   |------------ Token data is encoded in 32 bytes ---------------|
 // 0x0000000000000000000000000000000000000000000000000000000000000000
@@ -39,7 +40,6 @@ library RaiseToken {
     }
 
     function projectId(uint256 tokenId) internal pure returns (uint32) {
-        (, RaiseData memory raise) = decode(tokenId);
-        return raise.projectId;
+        return uint32(tokenId >> TWO_BYTES);
     }
 }

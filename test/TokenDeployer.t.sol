@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "./EmintTest.t.sol";
 
@@ -64,6 +64,8 @@ contract TestDeployment is TokenDeployerTest {
 }
 
 contract TestController is TokenDeployerTest {
+    event SetTokens(address oldTokens, address newTokens);
+
     function test_has_controller_address() public {
         assertEq(deployer.controller(), controller);
     }
@@ -128,6 +130,46 @@ contract TestController is TokenDeployerTest {
         assertEq(deployer.allowed(bob), true);
         assertEq(deployer.allowed(carol), true);
         assertEq(deployer.allowed(eve), false);
+    }
+
+    function test_controller_can_set_new_tokens() public {
+        address newTokens = mkaddr("new reciever");
+
+        vm.prank(controller);
+        deployer.setDependency("tokens", newTokens);
+
+        assertEq(deployer.tokens(), newTokens);
+    }
+
+    function test_set_tokens_emits_event() public {
+        address newTokens = mkaddr("new reciever");
+
+        vm.expectEmit(false, false, false, true);
+        emit SetTokens(address(tokens), newTokens);
+
+        vm.prank(controller);
+        deployer.setDependency("tokens", newTokens);
+    }
+
+    function test_non_controller_cannot_set_new_tokens() public {
+        address newTokens = mkaddr("new reciever");
+
+        vm.expectRevert(ICommonErrors.Forbidden.selector);
+        deployer.setDependency("tokens", newTokens);
+    }
+
+    function test_controller_cannot_set_invalid_dependency() public {
+        address invalid = mkaddr("invalid");
+
+        vm.expectRevert(abi.encodeWithSelector(IControllable.InvalidDependency.selector, bytes32("invalid")));
+        vm.prank(controller);
+        deployer.setDependency("invalid", invalid);
+    }
+
+    function test_controller_cannot_set_zero_address() public {
+        vm.expectRevert(ICommonErrors.ZeroAddress.selector);
+        vm.prank(controller);
+        deployer.setDependency("tokens", address(0));
     }
 }
 

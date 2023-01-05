@@ -1,7 +1,13 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "openzeppelin-contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import {IERC165Upgradeable} from "openzeppelin-contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol";
+import {
+    IERC1155Upgradeable,
+    IERC1155MetadataURIUpgradeable
+} from "openzeppelin-contracts-upgradeable/token/ERC1155/ERC1155Upgradeable.sol";
+import {IERC2981Upgradeable} from "openzeppelin-contracts-upgradeable/interfaces/IERC2981Upgradeable.sol";
 import {Strings} from "openzeppelin-contracts/utils/Strings.sol";
 
 import "../EmintTest.t.sol";
@@ -25,6 +31,8 @@ contract Emint1155Test is EmintTest, ERC1155Holder {
     Tokens internal tokens;
     Royalties internal royalties;
 
+    address alice = mkaddr("alice");
+    address bob = mkaddr("bob");
     address eve = mkaddr("eve");
 
     address controller = mkaddr("controller");
@@ -32,6 +40,7 @@ contract Emint1155Test is EmintTest, ERC1155Holder {
     address protocol = mkaddr("protocol");
     address creators = mkaddr("creators");
     address owner = mkaddr("owner");
+    address deployer = mkaddr("deployer");
 
     string constant DEFAULT_TOKEN_URI = "http://default-uri.com/";
     string constant DEFAULT_CONTRACT_URI = "http://default-uri.com/contract/";
@@ -45,7 +54,11 @@ contract Emint1155Test is EmintTest, ERC1155Holder {
         royalties = new Royalties(controller, protocol);
         tokens = new Tokens(controller);
 
-        token = new Emint1155();
+        vm.prank(controller);
+        tokens.setDependency("deployer", deployer);
+
+        vm.prank(deployer);
+        token = Emint1155(tokens.deploy());
 
         vm.startPrank(controller);
         tokens.setDependency("minter", minter);
@@ -57,13 +70,10 @@ contract Emint1155Test is EmintTest, ERC1155Holder {
 
 contract TestInitializer is Emint1155Test {
     function test_initializer_sets_tokens_address() public {
-        token.initialize(address(tokens));
         assertEq(token.tokens(), address(tokens));
     }
 
     function test_initializer_cannot_be_called_twice() public {
-        token.initialize(address(tokens));
-
         vm.expectRevert("Initializable: contract is already initialized");
         token.initialize(address(0));
     }
@@ -72,7 +82,6 @@ contract TestInitializer is Emint1155Test {
 contract TestMint is Emint1155Test {
     function setUp() public override {
         super.setUp();
-        token.initialize(address(tokens));
     }
 
     function test_has_tokens_address() public {
@@ -122,7 +131,6 @@ contract TestMetadata is Emint1155Test {
 
     function setUp() public override {
         super.setUp();
-        token.initialize(address(tokens));
     }
 
     function test_has_metadata_address() public {
@@ -153,7 +161,6 @@ contract TestRoyalties is Emint1155Test {
 
     function setUp() public override {
         super.setUp();
-        token.initialize(address(tokens));
     }
 
     function test_has_royalties_address() public {
@@ -171,10 +178,107 @@ contract TestRoyalties is Emint1155Test {
     }
 }
 
+contract TestInterfaceDetection is Emint1155Test {
+    function setUp() public override {
+        super.setUp();
+    }
+
+    function test_supports_erc165() public {
+        assertEq(token.supportsInterface(type(IERC165Upgradeable).interfaceId), true);
+    }
+
+    function test_supports_erc1155() public {
+        assertEq(token.supportsInterface(type(IERC1155Upgradeable).interfaceId), true);
+    }
+
+    function test_supports_erc1155_metadata() public {
+        assertEq(token.supportsInterface(type(IERC1155MetadataURIUpgradeable).interfaceId), true);
+    }
+
+    function test_supports_erc2981() public {
+        assertEq(token.supportsInterface(type(IERC2981Upgradeable).interfaceId), true);
+    }
+}
+
+contract TestTransfers is Emint1155Test {
+    function setUp() public override {
+        super.setUp();
+    }
+
+    function test_transfer() public {
+        vm.prank(address(tokens));
+        token.mint(alice, 1, 1, "");
+
+        assertEq(token.balanceOf(alice, 1), 1);
+        assertEq(token.balanceOf(bob, 1), 0);
+
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 1, 1, "");
+
+        assertEq(token.balanceOf(alice, 1), 0);
+        assertEq(token.balanceOf(bob, 1), 1);
+    }
+
+    function test_batch_transfer() public {
+        vm.startPrank(address(tokens));
+        token.mint(alice, 1, 1, "");
+        token.mint(alice, 2, 1, "");
+        vm.stopPrank();
+
+        assertEq(token.balanceOf(alice, 1), 1);
+        assertEq(token.balanceOf(alice, 2), 1);
+
+        assertEq(token.balanceOf(bob, 1), 0);
+        assertEq(token.balanceOf(bob, 2), 0);
+
+        uint256[] memory ids = new uint256[](2);
+        uint256[] memory amounts = new uint256[](2);
+
+        ids[0] = 1;
+        ids[1] = 2;
+
+        amounts[0] = 1;
+        amounts[1] = 1;
+
+        vm.prank(alice);
+        token.safeBatchTransferFrom(alice, bob, ids, amounts, "");
+
+        assertEq(token.balanceOf(alice, 1), 0);
+        assertEq(token.balanceOf(alice, 2), 0);
+
+        assertEq(token.balanceOf(bob, 1), 1);
+        assertEq(token.balanceOf(bob, 2), 1);
+    }
+
+    function test_batch_burn() public {
+        vm.startPrank(address(tokens));
+        token.mint(alice, 1, 1, "");
+        token.mint(alice, 2, 1, "");
+        vm.stopPrank();
+
+        assertEq(token.balanceOf(alice, 1), 1);
+        assertEq(token.balanceOf(alice, 2), 1);
+
+        uint256[] memory ids = new uint256[](2);
+        uint256[] memory amounts = new uint256[](2);
+
+        ids[0] = 1;
+        ids[1] = 2;
+
+        amounts[0] = 1;
+        amounts[1] = 1;
+
+        vm.prank(alice);
+        token.burnBatch(alice, ids, amounts);
+
+        assertEq(token.balanceOf(alice, 1), 0);
+        assertEq(token.balanceOf(alice, 2), 0);
+    }
+}
+
 contract TestContractInfo is Emint1155Test {
     function setUp() public override {
         super.setUp();
-        token.initialize(address(tokens));
     }
 
     function test_has_name() public {

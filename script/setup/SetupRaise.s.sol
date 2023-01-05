@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
@@ -17,10 +17,7 @@ import {TokenDeployer} from "../../src/TokenDeployer.sol";
 import {Tokens} from "../../src/Tokens.sol";
 
 contract SetupRaise is Script {
-
     address constant CREATE2_DEPLOYER = address(0x4e59b44847b379578588920cA78FbF26c0B4956C);
-
-    event Huh(address);
 
     function run() public {
         string memory tokenURI = "https://www.staging-entertainmint.com/api/metadata/tokens/";
@@ -56,8 +53,7 @@ contract SetupRaise is Script {
 
         vm.startBroadcast();
         uint32 projectId = creators.createProject();
-        uint32 raiseId = creators.createRaise(projectId, raiseParams, tierParams);
+        creators.createRaise(projectId, raiseParams, tierParams);
         vm.stopBroadcast();
     }
-
 }

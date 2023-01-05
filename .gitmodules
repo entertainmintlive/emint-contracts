@@ -10,3 +10,7 @@
 [submodule "lib/ds-test"]
 	path = lib/ds-test
 	url = https://github.com/dapphub/ds-test
+[submodule "lib/operator-filter-registry"]
+	path = lib/operator-filter-registry
+	url = https://github.com/ProjectOpenSea/operator-filter-registry
+	branch = v1.3.1

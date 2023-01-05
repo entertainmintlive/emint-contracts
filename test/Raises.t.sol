@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import "./EmintTest.t.sol";
 import {ETH} from "../src/constants/Constants.sol";
@@ -36,7 +36,14 @@ contract RaisesTest is EmintTest {
 
     address protocol = mkaddr("protocol");
 
-    event CreateRaise(uint32 indexed projectId, uint32 raiseId, RaiseParams params, TierParams[] tiers);
+    event CreateRaise(
+        uint32 indexed projectId,
+        uint32 raiseId,
+        RaiseParams params,
+        TierParams[] tiers,
+        address fanToken,
+        address brandToken
+    );
     event UpdateRaise(uint32 indexed projectId, uint32 indexed raiseId, RaiseParams params, TierParams[] tiers);
     event Mint(
         uint32 indexed projectId,
@@ -62,6 +69,7 @@ contract RaisesTest is EmintTest {
         uint256 refundAmount
     );
     event WithdrawFees(address indexed receiver, address currency, uint256 amount);
+    event SetFeeSchedule(FeeSchedule oldFeeSchedule, FeeSchedule newFeeSchedule);
 
     TierParams[] tierParams;
 
@@ -189,8 +197,11 @@ contract TestCreateRaise is RaisesTest {
     function test_create_raise_emits_event() public {
         projects.create(address(this));
 
+        address fanToken = address(0x9B447189fBAf16Fd5CfC19e090406415C14c3735);
+        address brandToken = address(0x1FD5dc56C396e2E1C3769665b02983A4eE2b3B62);
+
         vm.expectEmit(true, false, false, true);
-        emit CreateRaise(1, 1, raiseParams, tierParams);
+        emit CreateRaise(1, 1, raiseParams, tierParams, fanToken, brandToken);
 
         vm.prank(creators);
         raises.create(1, raiseParams, tierParams);
@@ -294,7 +305,7 @@ contract TestCreateRaise is RaisesTest {
 
         Raise memory raise = raises.getRaise(1, 1);
 
-        assertEq(raise.presaleStart, raiseParams.presaleStart);
+        assertEq(raise.timestamps.presaleStart, raiseParams.presaleStart);
     }
 
     function test_raise_has_presale_end() public {
@@ -305,7 +316,7 @@ contract TestCreateRaise is RaisesTest {
 
         Raise memory raise = raises.getRaise(1, 1);
 
-        assertEq(raise.presaleEnd, raiseParams.presaleEnd);
+        assertEq(raise.timestamps.presaleEnd, raiseParams.presaleEnd);
     }
 
     function test_raise_has_public_sale_start() public {
@@ -316,7 +327,7 @@ contract TestCreateRaise is RaisesTest {
 
         Raise memory raise = raises.getRaise(1, 1);
 
-        assertEq(raise.publicSaleStart, raiseParams.publicSaleStart);
+        assertEq(raise.timestamps.publicSaleStart, raiseParams.publicSaleStart);
     }
 
     function test_raise_has_public_sale_end() public {
@@ -327,7 +338,7 @@ contract TestCreateRaise is RaisesTest {
 
         Raise memory raise = raises.getRaise(1, 1);
 
-        assertEq(raise.publicSaleEnd, raiseParams.publicSaleEnd);
+        assertEq(raise.timestamps.publicSaleEnd, raiseParams.publicSaleEnd);
     }
 
     function test_end_must_be_later_than_start() public {
@@ -436,6 +447,18 @@ contract TestCreateRaise is RaisesTest {
         assertEq(raise.raised, 0);
         assertEq(raise.balance, 0);
     }
+
+    function test_get_tiers_project_not_found() public {
+        vm.expectRevert(ICommonErrors.NotFound.selector);
+        raises.getTiers(1, 1);
+    }
+
+    function test_get_tiers_raise_not_found() public {
+        projects.create(address(this));
+
+        vm.expectRevert(ICommonErrors.NotFound.selector);
+        raises.getTiers(1, 1);
+    }
 }
 
 contract TestUpdateRaise is RaisesTest {
@@ -451,8 +474,7 @@ contract TestUpdateRaise is RaisesTest {
         vm.prank(creators);
         raises.create(1, raiseParams, tierParams);
 
-        Raise memory raise = raises.getRaise(1, 1);
-        assertEq(uint8(raise.phase()), uint8(Phase.Scheduled));
+        assertEq(uint8(raises.getPhase(1, 1)), uint8(Phase.Scheduled));
 
         RaiseParams memory updatedParams = RaiseParams({
             currency: address(erc20),
@@ -507,10 +529,10 @@ contract TestUpdateRaise is RaisesTest {
         assertEq(updated.currency, updatedParams.currency);
         assertEq(updated.goal, updatedParams.goal);
         assertEq(updated.max, updatedParams.max);
-        assertEq(updated.presaleStart, updatedParams.presaleStart);
-        assertEq(updated.presaleEnd, updatedParams.presaleEnd);
-        assertEq(updated.publicSaleStart, updatedParams.publicSaleStart);
-        assertEq(updated.publicSaleEnd, updatedParams.publicSaleEnd);
+        assertEq(updated.timestamps.presaleStart, updatedParams.presaleStart);
+        assertEq(updated.timestamps.presaleEnd, updatedParams.presaleEnd);
+        assertEq(updated.timestamps.publicSaleStart, updatedParams.publicSaleStart);
+        assertEq(updated.timestamps.publicSaleEnd, updatedParams.publicSaleEnd);
         assertEq(updated.projectId, 1);
         assertEq(updated.raiseId, 1);
 
@@ -535,8 +557,7 @@ contract TestUpdateRaise is RaisesTest {
         vm.prank(creators);
         raises.create(1, raiseParams, tierParams);
 
-        Raise memory raise = raises.getRaise(1, 1);
-        assertEq(uint8(raise.phase()), uint8(Phase.Scheduled));
+        assertEq(uint8(raises.getPhase(1, 1)), uint8(Phase.Scheduled));
 
         RaiseParams memory updatedParams = RaiseParams({
             currency: address(erc20),
@@ -591,17 +612,50 @@ contract TestUpdateRaise is RaisesTest {
         raises.update(1, 1, updatedParams, updatedTierParams);
     }
 
+    function test_creators_cannot_update_raise_when_inactive() public {
+        projects.create(address(this));
+
+        vm.startPrank(creators);
+        raises.create(1, raiseParams, tierParams);
+        raises.cancel(1, 1);
+
+        vm.expectRevert(IRaises.RaiseInactive.selector);
+        raises.update(1, 1, raiseParams, tierParams);
+
+        vm.stopPrank();
+    }
+
     function test_creators_cannot_update_raise_when_not_scheduled() public {
         projects.create(address(this));
 
         vm.prank(creators);
         raises.create(1, raiseParams, tierParams);
 
-        Raise memory raise = raises.getRaise(1, 1);
-        assertEq(uint8(raise.phase()), uint8(Phase.Presale));
+        assertEq(uint8(raises.getPhase(1, 1)), uint8(Phase.Presale));
 
         vm.prank(creators);
-        vm.expectRevert(IRaises.RaiseNotScheduled.selector);
+        vm.expectRevert(IRaises.RaiseHasStarted.selector);
+        raises.update(1, 1, raiseParams, tierParams);
+    }
+
+    function test_creators_cannot_update_raise_after_presale_start() public {
+        projects.create(address(this));
+
+        // Leave a 1 day gap between presale and public sale.
+        // During this period, the raise will return to Scheduled phase
+        // but creators should not be allowed to modify it.
+        raiseParams.publicSaleStart = uint64(block.timestamp) + 11 days;
+
+        vm.prank(creators);
+        raises.create(1, raiseParams, tierParams);
+
+        assertEq(uint8(raises.getPhase(1, 1)), uint8(Phase.Presale));
+
+        vm.warp(raiseParams.presaleEnd + 1);
+        assertEq(uint8(raises.getPhase(1, 1)), uint8(Phase.Scheduled));
+
+        vm.prank(creators);
+        vm.expectRevert(IRaises.RaiseHasStarted.selector);
         raises.update(1, 1, raiseParams, tierParams);
     }
 
@@ -748,6 +802,15 @@ contract TestMintFromRaise is RaisesTest {
         raises.mint{value: 0.01 ether}(1, 1, 0, 1);
 
         vm.stopPrank();
+    }
+
+    function test_mint_from_inactive_raise_reverts() public {
+        vm.prank(creators);
+        raises.cancel(1, 1);
+
+        vm.expectRevert(IRaises.RaiseInactive.selector);
+        vm.prank(alice);
+        raises.mint{value: 0.01 ether}(1, 1, 0, 1);
     }
 
     function test_mint_from_raise_invalid_proof_reverts_invalid_proof() public {
@@ -971,6 +1034,20 @@ contract TestSettlement is RaisesTest {
         assertEq(uint8(raise.state), uint8(RaiseState.Funded));
     }
 
+    function test_settle_sets_state_to_funded_when_goal_is_exceeded() public {
+        vm.startPrank(alice);
+        raises.mint{value: 1 ether}(1, 1, 0, 1);
+        raises.mint{value: 1 ether}(1, 1, 0, 1);
+        vm.stopPrank();
+
+        vm.warp(raiseParams.publicSaleEnd + 1);
+
+        raises.settle(1, 1);
+
+        Raise memory raise = raises.getRaise(1, 1);
+        assertEq(uint8(raise.state), uint8(RaiseState.Funded));
+    }
+
     function test_funded_settle_emits_event() public {
         vm.prank(alice);
         raises.mint{value: 1 ether}(1, 1, 0, 1);
@@ -1081,6 +1158,16 @@ contract TestClose is RaisesTest {
 
         Raise memory raise = raises.getRaise(1, 1);
         assertEq(uint8(raise.state), uint8(RaiseState.Funded));
+    }
+
+    function test_close_collects_protocol_fee() public {
+        vm.prank(alice);
+        raises.mint{value: 1 ether}(1, 1, 0, 1);
+
+        vm.prank(creators);
+        raises.close(1, 1);
+
+        assertEq(raises.fees(ETH), 0.05 ether);
     }
 
     function test_close_emits_event() public {
@@ -1252,6 +1339,15 @@ contract TestRedemption is RaisesTest {
         vm.prank(alice);
         vm.expectRevert(IRaises.RaiseNotCancelled.selector);
         raises.redeem(1, 1, 1, 1);
+    }
+
+    function test_redeem_invalid_tier_reverts_not_found() public {
+        vm.prank(creators);
+        raises.cancel(1, 1);
+
+        vm.prank(alice);
+        vm.expectRevert(ICommonErrors.NotFound.selector);
+        raises.redeem(1, 1, 10, 1);
     }
 
     function test_redeem_unowned_token_reverts() public {
@@ -1455,6 +1551,93 @@ contract TestFees is RaisesTest {
 
         deal(alice, 1 ether);
         vm.warp(raiseParams.publicSaleStart);
+    }
+
+    function test_has_default_fee_schedule() public {
+        (uint16 fanFee, uint16 brandFee) = raises.feeSchedule();
+        assertEq(fanFee, 500);
+        assertEq(brandFee, 2500);
+    }
+
+    function test_controller_can_update_fee_schedule() public {
+        FeeSchedule memory oldSchedule = FeeSchedule({fanFee: 500, brandFee: 2500});
+        FeeSchedule memory newSchedule = FeeSchedule({fanFee: 250, brandFee: 3000});
+        vm.expectEmit(false, false, false, true);
+        emit SetFeeSchedule(oldSchedule, newSchedule);
+
+        vm.prank(controller);
+        raises.setFeeSchedule(newSchedule);
+
+        (uint16 fanFee, uint16 brandFee) = raises.feeSchedule();
+        assertEq(fanFee, 250);
+        assertEq(brandFee, 3000);
+    }
+
+    function test_reverts_invalid_fan_fee() public {
+        FeeSchedule memory newSchedule = FeeSchedule({fanFee: 10_000, brandFee: 3000});
+
+        vm.expectRevert(abi.encodeWithSelector(ValidationError.selector, "invalid fanFee"));
+        vm.prank(controller);
+        raises.setFeeSchedule(newSchedule);
+    }
+
+    function test_reverts_invalid_brand_fee() public {
+        FeeSchedule memory newSchedule = FeeSchedule({fanFee: 100, brandFee: 10_000});
+
+        vm.expectRevert(abi.encodeWithSelector(ValidationError.selector, "invalid brandFee"));
+        vm.prank(controller);
+        raises.setFeeSchedule(newSchedule);
+    }
+
+    function test_non_controller_cannot_update_fee_schedule() public {
+        FeeSchedule memory newSchedule = FeeSchedule({fanFee: 250, brandFee: 3000});
+
+        vm.expectRevert(ICommonErrors.Forbidden.selector);
+        raises.setFeeSchedule(newSchedule);
+    }
+
+    function test_raise_stores_current_fee_schedule() public {
+        Raise memory raise = raises.getRaise(1, 1);
+        assertEq(raise.feeSchedule.fanFee, 500);
+        assertEq(raise.feeSchedule.brandFee, 2500);
+
+        FeeSchedule memory newSchedule = FeeSchedule({fanFee: 250, brandFee: 3000});
+
+        vm.prank(controller);
+        raises.setFeeSchedule(newSchedule);
+
+        vm.warp(raiseParams.presaleStart - 1);
+
+        vm.prank(creators);
+        raises.create(1, raiseParams, tierParams);
+
+        Raise memory newRaise = raises.getRaise(1, 2);
+        assertEq(newRaise.feeSchedule.fanFee, 250);
+        assertEq(newRaise.feeSchedule.brandFee, 3000);
+
+        Raise memory oldRaise = raises.getRaise(1, 1);
+        assertEq(oldRaise.feeSchedule.fanFee, 500);
+        assertEq(oldRaise.feeSchedule.brandFee, 2500);
+    }
+
+    function test_fee_schedule_fixed_at_creation_time() public {
+        Raise memory raise = raises.getRaise(1, 1);
+        assertEq(raise.feeSchedule.fanFee, 500);
+        assertEq(raise.feeSchedule.brandFee, 2500);
+
+        FeeSchedule memory newSchedule = FeeSchedule({fanFee: 250, brandFee: 3000});
+
+        vm.prank(controller);
+        raises.setFeeSchedule(newSchedule);
+
+        vm.warp(raiseParams.presaleStart - 1);
+
+        vm.prank(creators);
+        raises.update(1, 1, raiseParams, tierParams);
+
+        Raise memory oldRaise = raises.getRaise(1, 1);
+        assertEq(oldRaise.feeSchedule.fanFee, 500);
+        assertEq(oldRaise.feeSchedule.brandFee, 2500);
     }
 
     function test_withdraw_fees_unauthorized_reverts_forbidden() public {
@@ -1750,6 +1933,36 @@ contract TestController is RaisesTest {
 
         vm.expectRevert(ICommonErrors.Forbidden.selector);
         raises.setDependency("tokenAuth", newTokenAuth);
+    }
+
+    function test_controller_can_set_deployer() public {
+        address newDeployer = mkaddr("new deployer");
+
+        vm.prank(controller);
+        raises.setDependency("deployer", newDeployer);
+
+        assertEq(raises.deployer(), newDeployer);
+    }
+
+    function test_non_controller_cannot_set_deployer() public {
+        address newDeployer = mkaddr("new deployer");
+
+        vm.expectRevert(ICommonErrors.Forbidden.selector);
+        raises.setDependency("deployer", newDeployer);
+    }
+
+    function test_controller_cannot_set_invalid_dependency() public {
+        address invalid = mkaddr("invalid");
+
+        vm.expectRevert(abi.encodeWithSelector(IControllable.InvalidDependency.selector, bytes32("invalid")));
+        vm.prank(controller);
+        raises.setDependency("invalid", invalid);
+    }
+
+    function test_controller_cannot_set_zero_address() public {
+        vm.expectRevert(ICommonErrors.ZeroAddress.selector);
+        vm.prank(controller);
+        raises.setDependency("deployer", address(0));
     }
 }
 

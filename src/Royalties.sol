@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import {Controllable} from "./abstract/Controllable.sol";
 import {IRoyalties} from "./interfaces/IRoyalties.sol";
 import {IControllable} from "./interfaces/IControllable.sol";
+import {RoyaltySchedule, CustomRoyalty} from "./structs/Royalty.sol";
 import {TokenData, TokenType} from "./structs/TokenData.sol";
 import {RaiseData, TierType} from "./structs/RaiseData.sol";
 import {RaiseToken} from "./libraries/RaiseToken.sol";
@@ -19,6 +20,10 @@ contract Royalties is IRoyalties, Controllable {
     string public constant VERSION = "0.0.1";
 
     address public receiver;
+    RoyaltySchedule public royaltySchedule = RoyaltySchedule({fanRoyalty: 150, brandRoyalty: 1000});
+
+    /// tokenId => CustomRoyalty
+    mapping(uint256 => CustomRoyalty) public customRoyalties;
 
     constructor(address _controller, address _receiver) Controllable(_controller) {
         if (_receiver == address(0)) revert ZeroAddress();
@@ -26,20 +31,50 @@ contract Royalties is IRoyalties, Controllable {
     }
 
     /// @inheritdoc IRoyalties
-    function royaltyInfo(uint256 tokenId, uint256 salePrice) public view override returns (address, uint256) {
-        uint256 feeBps;
+    function royaltyInfo(uint256 tokenId, uint256 salePrice)
+        public
+        view
+        override
+        returns (address to, uint256 royaltyAmount)
+    {
+        uint256 royaltyBps;
 
-        (TokenData memory token, RaiseData memory raise) = tokenId.decode();
-        if (token.tokenType == TokenType.Raise) {
-            if (raise.tierType == TierType.Fan) {
-                feeBps = 150;
+        CustomRoyalty memory customRoyalty = customRoyalties[tokenId];
+
+        if (customRoyalty.receiver == address(0)) {
+            to = receiver;
+            (TokenData memory token, RaiseData memory raise) = tokenId.decode();
+            if (token.tokenType == TokenType.Raise) {
+                if (raise.tierType == TierType.Fan) {
+                    royaltyBps = royaltySchedule.fanRoyalty;
+                }
+                if (raise.tierType == TierType.Brand) {
+                    royaltyBps = royaltySchedule.brandRoyalty;
+                }
             }
-            if (raise.tierType == TierType.Brand) {
-                feeBps = 1000;
-            }
+        } else {
+            to = customRoyalty.receiver;
+            royaltyBps = customRoyalty.royaltyBps;
         }
-        uint256 royalty = (feeBps * salePrice) / BPS_DENOMINATOR;
-        return (receiver, royalty);
+
+        royaltyAmount = (salePrice * royaltyBps) / BPS_DENOMINATOR;
+    }
+
+    /// @inheritdoc IRoyalties
+    function setCustomRoyalty(uint256 tokenId, CustomRoyalty calldata customRoyalty) external override onlyController {
+        if (customRoyalty.receiver == address(0)) revert InvalidReceiver();
+        if (customRoyalty.royaltyBps >= BPS_DENOMINATOR) revert InvalidRoyalty();
+        customRoyalties[tokenId] = customRoyalty;
+        emit SetCustomRoyalty(tokenId, customRoyalty);
+    }
+
+    /// @inheritdoc IRoyalties
+    function setRoyaltySchedule(RoyaltySchedule calldata newRoyaltySchedule) external override onlyController {
+        if (newRoyaltySchedule.fanRoyalty >= BPS_DENOMINATOR || newRoyaltySchedule.brandRoyalty >= BPS_DENOMINATOR) {
+            revert InvalidRoyalty();
+        }
+        emit SetRoyaltySchedule(royaltySchedule, newRoyaltySchedule);
+        royaltySchedule = newRoyaltySchedule;
     }
 
     /// @inheritdoc IControllable
@@ -50,6 +85,7 @@ contract Royalties is IRoyalties, Controllable {
     {
         if (_contract == address(0)) revert ZeroAddress();
         else if (_name == "receiver") _setReceiver(_contract);
+        else revert InvalidDependency(_name);
     }
 
     function _setReceiver(address _receiver) internal {

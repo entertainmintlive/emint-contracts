@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 import {IControllable} from "./IControllable.sol";
 import {IAnnotated} from "./IAnnotated.sol";
 import {IPausable} from "./IPausable.sol";
-import {Raise, RaiseParams, RaiseState, Phase} from "../structs/Raise.sol";
+import {Raise, RaiseParams, RaiseState, Phase, FeeSchedule} from "../structs/Raise.sol";
 import {Tier, TierParams} from "../structs/Tier.sol";
 
 interface IRaises is IPausable, IControllable, IAnnotated {
@@ -30,16 +30,25 @@ interface IRaises is IPausable, IControllable, IAnnotated {
     error RaiseInactive();
     /// @notice The raise has not yet ended.
     error RaiseNotEnded();
-    /// @notice The raise has started and is no longer in Scheduled phase.
-    error RaiseNotScheduled();
+    /// @notice The raise has started and can no longer be updated.
+    error RaiseHasStarted();
     /// @notice The raise has not yet started and is in the Scheduled phase.
     error RaiseNotStarted();
     /// @notice This token tier is sold out, or an attempt to mint would exceed the maximum supply.
     error RaiseSoldOut();
     /// @notice The caller's token balance is zero.
     error ZeroBalance();
+    /// @notice One or both fees in the provided fee schedule equal or exceed 100%.
+    error InvalidFeeSchedule();
 
-    event CreateRaise(uint32 indexed projectId, uint32 raiseId, RaiseParams params, TierParams[] tiers);
+    event CreateRaise(
+        uint32 indexed projectId,
+        uint32 raiseId,
+        RaiseParams params,
+        TierParams[] tiers,
+        address fanToken,
+        address brandToken
+    );
     event UpdateRaise(uint32 indexed projectId, uint32 indexed raiseId, RaiseParams params, TierParams[] tiers);
     event Mint(
         uint32 indexed projectId,
@@ -66,6 +75,7 @@ interface IRaises is IPausable, IControllable, IAnnotated {
     );
     event WithdrawFees(address indexed receiver, address currency, uint256 amount);
 
+    event SetFeeSchedule(FeeSchedule oldFeeSchedule, FeeSchedule newFeeSchedule);
     event SetCreators(address oldCreators, address newCreators);
     event SetProjects(address oldProjects, address newProjects);
     event SetMinter(address oldMinter, address newMinter);
@@ -154,6 +164,10 @@ interface IRaises is IPausable, IControllable, IAnnotated {
     /// @param amount uint256 quantity of tokens to redeem.
     function redeem(uint32 projectId, uint32 raiseId, uint32 tierId, uint256 amount) external;
 
+    /// @notice Set a new fee schedule. May only be called by `controller` contract.
+    /// @param _feeSchedule FeeSchedule new fee schedule.
+    function setFeeSchedule(FeeSchedule calldata _feeSchedule) external;
+
     /// @notice Withdraw accrued protocol fees for given `currency` to given
     /// `receiver` address. May only be called by `controller` contract.
     /// @param currency address ERC20 token address or special sentinel value for ETH.
@@ -165,6 +179,12 @@ interface IRaises is IPausable, IControllable, IAnnotated {
     /// @param raiseId uint32 raise ID.
     /// @return Raise struct.
     function getRaise(uint32 projectId, uint32 raiseId) external view returns (Raise memory);
+
+    /// @notice Get a raise's current Phase by project ID and raise ID.
+    /// @param projectId uint32 project ID.
+    /// @param raiseId uint32 raise ID.
+    /// @return Phase enum member.
+    function getPhase(uint32 projectId, uint32 raiseId) external view returns (Phase);
 
     /// @notice Get all tiers for a given raise by project ID and raise ID.
     /// @param projectId uint32 project ID.

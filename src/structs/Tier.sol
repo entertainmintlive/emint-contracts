@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.17;
 
 /// @notice Enum indicating whether a token is a "fan" or "brand" token. Fan
 /// tokens are intended for purchase by project patrons and have a lower protocol
